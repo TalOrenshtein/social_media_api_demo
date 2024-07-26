@@ -56,3 +56,75 @@ def get_sql_schema(table:str)->dict:
                     schema[key]=value
                 return schema
         raise ValueError(f'{table} table not found.')
+
+def expand_response(src:str,dest:dict,res:dict=None)->dict|None:
+    r'''
+    get the detail of the requested dests until depth of 4 nested dests
+    :param str src: The type of the source object that requested the expandation
+    :param dict dest: A dict that includes the following key (type) value pairs:
+        * type: (str): The destation which was requests. dest might be nested.
+        * id (dict): The src's object id. If dest is nested, it's the id of the first object
+    :returns: A dict with dest's details in it, or none if not found.
+    '''
+    dests=dest['type'].split('.')[:4]
+    try:
+        get_sql_schema(f'{dests[0]}s')
+        #dests[0]=f'{dests[0]}s' #TODO: is needed? don't think so because we don't only accessing it's table, but use it as a field too
+    except ValueError:
+        try:
+            get_sql_schema(f'{dests[0]}')
+        except _:
+            raise ValueError(f"couldn't find {dests[0]}'s table in DB")
+    if not res:
+        res={}
+    #using memoraztion technique to avoid unnecessary recursion calls when possible
+    if f'{dests[0]}@{dest['id']}{f"${dests[1]}" if len(dests>1) else ""}' in res:
+        return res[f'{dests[0]}@{dest['id']}{f"${dests[1]}" if len(dests>1) else ""}'] #TODO: CHECK! not sure it's correct.
+    last=expand_response_helper(
+        src,
+        {"type":dests[0],"id":dest['id']},
+        dests[1] if len(dests>1) else None
+    )
+    res[f'{dests[0]}@{dest['id']}{f"${dests[1]}" if len(dests>1) else ""}']=last
+    src=dests[0]
+    dests.pop(0)
+    if len(dest)==0:
+        return last
+    dest['id']=last[f'{dests[0]}']
+    dest['type']=".".join(dests)
+    return expand_response(src,dest,res)
+
+
+def expand_response_helper(src:str,dest:dict,wanted:str=None)->dict|None:
+    r'''
+    get the detail of the requested dest with depth of 1
+    :param str src: The type of the source object that requested the expandation
+    :param dict dest: A dict that includes the following key (type) value pairs:
+        * type: (str): The destation which was requests. dest might be nested.
+        * id (dict): The src's object id. If dest is nested, it's the id of the first object
+    :returns: A dict with dest's details in it, or none if not found.
+    '''
+    #validating that dest is related to src.
+    try:
+        related=dest['type'] in get_sql_schema(f'{src['type']}s')
+    except ValueError:
+        try:
+            related=dest['type'] in get_sql_schema(f'{src['type']}')
+        except _:
+            raise ValueError(f"{dest['type']} isn't related to {src['type']}")
+    if not related:
+        raise ValueError(f"{dest['type']} isn't related to {src['type']}")
+    
+    #getting dest's info
+    with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
+        #set up cursor
+        cur=db.cursor()
+        #turn on foreign keys
+        cur.execute('PRAGMA foreign_keys = ON;')
+        #set up row factory so SQL will return the results as a dict.
+        cur.row_factory=getAPIs_rowFactory()
+
+        cur.execute(f'''--sql
+            SELECT {'*' if not wanted else wanted} FROM {dest['type']}s WHERE ID=?
+        ''',[dest['id']]) #TODO: find more elegant solution to this ugly {dest['type']}s
+        return cur.fetchone() if not wanted else cur.fetchone[f'{wanted}']

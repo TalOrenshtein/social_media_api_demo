@@ -32,24 +32,24 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
     def create_vote(vote:schemas.vote_in,current_user:authSchemas.TokenData=Depends(oauth2.get_current_user)):
         cur.execute('''--sql
         SELECT ID FROM posts WHERE ID=?
-        ''',[vote.postID])
+        ''',[vote.post])
         if not cur.fetchone():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"post with id {vote.postID} doesn't exist.")
-        cur.execute('SELECT * FROM votes WHERE postID=? AND userID=?',[vote.postID,current_user.ID])
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"post with id {vote.post} doesn't exist.")
+        cur.execute('SELECT * FROM votes WHERE post=? AND user=?',[vote.post,current_user.ID])
         current_vote=cur.fetchone()
         if not current_vote:
             cur.execute('''--sql
                 INSERT INTO votes VALUES(?,?) 
-            ''',[vote.postID,current_user.ID])
+            ''',[vote.post,current_user.ID])
             db.commit()
             cur.execute('''--sql
-                SELECT * FROM votes WHERE postID=? AND userID=?
-            ''',[vote.postID,current_user.ID])
+                SELECT * FROM votes WHERE post=? AND user=?
+            ''',[vote.post,current_user.ID])
             vote=cur.fetchone()
             return vote
         else:
             cur.execute('''--sql
-                DELETE FROM votes WHERE postID=? AND userID=?
-            ''',[vote.postID,current_user.ID])
+                DELETE FROM votes WHERE post=? AND user=?
+            ''',[vote.post,current_user.ID])
             db.commit()
             raise HTTPException(status_code=status.HTTP_204_NO_CONTENT)
