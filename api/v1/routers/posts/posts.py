@@ -1,5 +1,5 @@
 import sqlite3
-from fastapi import APIRouter,status,HTTPException,Depends
+from fastapi import APIRouter,status,HTTPException,Depends,Query
 from . import schemas
 from typing import List,Optional
 from utils import schemaKeysToStr,getAPIs_rowFactory,expand_response
@@ -68,7 +68,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             posts_and_users AS (SELECT posts_out.*
             {f',user_table.{",user_table.".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""}
             FROM user_table CROSS JOIN posts_out ON posts_out.user=user_table.ID)
-            SELECT posts_and_users.*,COUNT(votes.postID) as votes FROM posts_and_users LEFT JOIN votes ON votes.postID=posts_and_users.ID GROUP BY posts_and_users.ID
+            SELECT posts_and_users.*,COUNT(votes.post) as votes FROM posts_and_users LEFT JOIN votes ON votes.post=posts_and_users.ID GROUP BY posts_and_users.ID
             ORDER BY {sort_by} {sort},created_at DESC --impossive to sql inject these as each is a chosen value from a fixed sized pool of values.
             LIMIT ? OFFSET ?
             ''',sqlArgs)
@@ -77,7 +77,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             cur.execute(f'''--sql
             WITH posts_out as (SELECT * FROM posts
             {"WHERE (title LIKE ? OR content LIKE ?)" if search!="" else " "})
-            SELECT posts_out.*,COUNT(votes.postID) as votes FROM posts_out LEFT JOIN votes ON votes.postID=posts_out.ID GROUP BY posts_out.ID
+            SELECT posts_out.*,COUNT(votes.post) as votes FROM posts_out LEFT JOIN votes ON votes.post=posts_out.ID GROUP BY posts_out.ID
             ORDER BY {sort_by} {sort}, posts_out.created_at DESC --impossive to sql inject these as each is a chosen value from a fixed sized pool of values.
             LIMIT ? OFFSET ?
             ''',sqlArgs)
@@ -90,7 +90,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             }
 
     @router.get('/{id}',response_model=schemas.posts_out)
-    def get_post(id:str,current_user:str=Depends(oauth2.get_current_user),expand:Optional[list]=[]):
+    def get_post(id:str,current_user:str=Depends(oauth2.get_current_user),expand:Optional[List[str]]=Query(None)):
         # posts table contains the user but not the username, so,after querying the relevant data we'll be joining tables to find the username too
         # generalizing the idea that posts_out needs some info from users table that's not in posts table.
         extraInfo_from_userTable=[]
@@ -100,7 +100,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         if len(extraInfo_from_userTable)>0:
             cur.execute(f'''--sql
             WITH posts_out AS (SELECT * FROM posts WHERE ID=?),
-            count_votes AS (SELECT COUNT(postID) AS votes FROM votes where postID=?),
+            count_votes AS (SELECT COUNT(post) AS votes FROM votes where post=?),
             user_table AS (SELECT ID{f',{",".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""} FROM users)
             SELECT posts_out.*
             {f',user_table.{",user_table.".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""}
@@ -109,13 +109,16 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             ''',[id,id])
         else:
             cur.execute('''--sql
-            WITH count_votes AS (SELECT COUNT(postID) AS votes FROM votes where postID=?)
+            WITH count_votes AS (SELECT COUNT(post) AS votes FROM votes where post=?)
             SELECT * FROM posts,count_votes WHERE posts.ID=?
             ''',[id,id])
 
         post=cur.fetchone()
-        for e in expand:
-            expand_response('posts',{'type':f"{e}","id":{post[f'{e}']}})
+        if expand:
+            print(expand)
+            for e in expand:
+                temp=expand_response('posts',{'type':f"{e}","id":post[f'{e}']})
+                print(temp)
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"post with id {id} doesn't exist.")
         return post

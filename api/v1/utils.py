@@ -78,17 +78,17 @@ def expand_response(src:str,dest:dict,res:dict=None)->dict|None:
     if not res:
         res={}
     #using memoraztion technique to avoid unnecessary recursion calls when possible
-    if f'{dests[0]}@{dest['id']}{f"${dests[1]}" if len(dests>1) else ""}' in res:
-        return res[f'{dests[0]}@{dest['id']}{f"${dests[1]}" if len(dests>1) else ""}'] #TODO: CHECK! not sure it's correct.
+    if f'{dests[0]}@{dest['id']}{f"${dests[1]}" if len(dests)>1 else ""}' in res:
+        return res[f'{dests[0]}@{dest['id']}{f"${dests[1]}" if len(dests)>1 else ""}'] #TODO: CHECK! not sure it's correct.
     last=expand_response_helper(
         src,
         {"type":dests[0],"id":dest['id']},
-        dests[1] if len(dests>1) else None
+        dests[1] if len(dests)>1 else None
     )
-    res[f'{dests[0]}@{dest['id']}{f"${dests[1]}" if len(dests>1) else ""}']=last
+    res[f'{dests[0]}@{dest['id']}{f"${dests[1]}" if len(dests)>1 else ""}']=last
     src=dests[0]
     dests.pop(0)
-    if len(dest)==0:
+    if len(dests)==0:
         return last
     dest['id']=last[f'{dests[0]}']
     dest['type']=".".join(dests)
@@ -105,15 +105,16 @@ def expand_response_helper(src:str,dest:dict,wanted:str=None)->dict|None:
     :returns: A dict with dest's details in it, or none if not found.
     '''
     #validating that dest is related to src.
-    try:
-        related=dest['type'] in get_sql_schema(f'{src['type']}s')
+    print(f"src: {src},\ndest: {dest},\nwanted: {wanted}")
+    try: #TODO: If you can do it with schemas instead, it'd be great.
+        related=dest['type'] in get_sql_schema(f'{src}s')
     except ValueError:
         try:
-            related=dest['type'] in get_sql_schema(f'{src['type']}')
+            related=dest['type'] in get_sql_schema(f'{src}')
         except _:
-            raise ValueError(f"{dest['type']} isn't related to {src['type']}")
+            raise ValueError(f"{dest['type']} isn't related to {src}")
     if not related:
-        raise ValueError(f"{dest['type']} isn't related to {src['type']}")
+        raise ValueError(f"{dest['type']} isn't related to {src}")
     
     #getting dest's info
     with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:

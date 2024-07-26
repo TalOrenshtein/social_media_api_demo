@@ -9,7 +9,7 @@ class posts_in(BaseModel):
 
 class posts_out(BaseModel):
     ID:str
-    ownerID:str
+    user:str
     username:str
     # email:str
     title:str
