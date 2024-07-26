@@ -49,7 +49,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         uuid=None
         #searching for available uuid
         while True:
-            uuid=uuid4().hex
+            uuid=f"u_{uuid4().hex}"
             cur.execute('SELECT ID FROM users WHERE ID=?',[uuid])
             if cur.fetchone() is None:
                 break

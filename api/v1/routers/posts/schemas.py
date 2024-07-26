@@ -8,7 +8,7 @@ class posts_in(BaseModel):
     content:str=Field(default='')
 
 class posts_out(BaseModel):
-    ID:int
+    ID:str
     ownerID:str
     username:str
     # email:str

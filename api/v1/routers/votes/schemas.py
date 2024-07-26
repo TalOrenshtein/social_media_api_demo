@@ -1,8 +1,8 @@
 from pydantic import BaseModel,Field
 
 class vote_in(BaseModel):
-    postID:int
+    postID:str
 
 class vote_out(BaseModel):
-    postID:int
+    postID:str
     userID:str

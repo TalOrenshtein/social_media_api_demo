@@ -5,6 +5,7 @@ from typing import List,Optional
 from utils import schemaKeysToStr,getAPIs_rowFactory
 from ..auth import oauth2,schemas as authSchemas
 from ..users import schemas as usersSchemas
+from uuid import uuid4
 
 with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
     #set up cursor
@@ -89,7 +90,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             }
 
     @router.get('/{id}',response_model=schemas.posts_out)
-    def get_post(id:int,current_user:str=Depends(oauth2.get_current_user)):
+    def get_post(id:str,current_user:str=Depends(oauth2.get_current_user)):
         # posts table contains the ownerID but not the username, so,after querying the relevant data we'll be joining tables to find the username too
         # generalizing the idea that posts_out needs some info from users table that's not in posts table.
         extraInfo_from_userTable=[]
@@ -105,12 +106,12 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             {f',user_table.{",user_table.".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""}
             ,count_votes.*
             FROM user_table CROSS JOIN posts_out ON posts_out.ownerID=user_table.ID,count_votes
-            ''',[int(id),int(id)])
+            ''',[id,id])
         else:
             cur.execute('''--sql
             WITH count_votes AS (SELECT COUNT(postID) AS votes FROM votes where postID=?)
             SELECT * FROM posts,count_votes WHERE posts.ID=?
-            ''',[int(id),int(id)])
+            ''',[id,id])
 
         post=cur.fetchone()
         if not post:
@@ -122,7 +123,14 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         post=schemas.posts_in(**post.dict())
         if post.content=="" and post.title=="":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail="post title and content cannot be empty at the same time.")
-        cur.execute(f'INSERT INTO posts(ownerID,{",".join(schemaKeysToStr(schemas.posts_in))}) VALUES(?,?,?)',[current_user.ID,post.title,post.content])
+        uuid=None
+        #searching for available uuid
+        while True:
+            uuid=f"p_{uuid4().hex}"
+            cur.execute('SELECT ID FROM posts WHERE ID=?',[uuid])
+            if cur.fetchone() is None:
+                break
+        cur.execute(f'INSERT INTO posts(ID,ownerID,{",".join(schemaKeysToStr(schemas.posts_in))}) VALUES(?,?,?,?)',[uuid,current_user.ID,post.title,post.content])
         db.commit()
 
         # posts table contains the ownerID but not the username, so,after querying the relevant data we'll be joining tables to find the username too
@@ -137,11 +145,11 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             user_table AS (SELECT ID{f',{",".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""} FROM users)
             SELECT post_created.* {f',user_table.{",user_table.".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""}
             FROM user_table CROSS JOIN post_created --ON post_created.ownerID=user_table.ID
-            ''',[cur.lastrowid])
+            ''',[uuid])
         else:
             cur.execute('''--sql
             SELECT * FROM posts WHERE ID=?
-            ''',[cur.lastrowid])
+            ''',[uuid])
         post=cur.fetchone()
         return post
 
