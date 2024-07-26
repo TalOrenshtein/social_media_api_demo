@@ -5,12 +5,13 @@ from . import schemas
 from fastapi import Depends,status,HTTPException
 from fastapi.security.oauth2 import OAuth2PasswordBearer
 import sqlite3
+from config import env
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 #JWT CONSTATNTS
-SECRET_KEY = "9321e07eb20554a37c4303a8ab4d0af04d16c4744eaaf3856fd0cb81eed7962e"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 3600
+SECRET_KEY = env.JWT_SECRET_KEY
+ALGORITHM = env.JWT_ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = env.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
 
 def create_token(data:dict, expires_timedelta:timedelta|None=None):
     to_encode=data.copy()

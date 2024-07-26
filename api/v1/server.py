@@ -1,10 +1,11 @@
 import sqlite3
-from fastapi import FastAPI
+from fastapi import FastAPI,APIRouter
 from routers.posts import posts
 from routers.users import users
 from routers.auth import auth
 from routers.votes import votes
 from fastapi.middleware.cors import CORSMiddleware
+from config import env
 
 with sqlite3.connect('social_media_api.db') as db:
     cur=db.cursor()
@@ -16,7 +17,6 @@ with sqlite3.connect('social_media_api.db') as db:
         db.commit()
 
 app=FastAPI()
-
 
 #dealing with CORS
 
@@ -33,12 +33,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#adding routers
-app.include_router(posts.router)
-app.include_router(users.router)
-app.include_router(auth.router)
-app.include_router(votes.router)
+#building prefix router for versioning
+prefix_router=APIRouter(prefix=f"/api/v{env.API_VERSION}")
 
-@app.get('/')
+#adding routers
+prefix_router.include_router(posts.router)
+prefix_router.include_router(users.router)
+prefix_router.include_router(auth.router)
+prefix_router.include_router(votes.router)
+
+@prefix_router.get('/')
 def root():
     return 'root'
+
+#adding said prefix router
+app.include_router(prefix_router)
