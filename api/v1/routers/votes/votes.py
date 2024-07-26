@@ -1,8 +1,8 @@
 import sqlite3
-from fastapi import APIRouter,status,HTTPException,Depends
+from fastapi import APIRouter,status,HTTPException,Depends,Query
 from . import schemas
-from utils import schemaKeysToStr,getAPIs_rowFactory
-from typing import List
+from utils import schemaKeysToStr,getAPIs_rowFactory,expand_response
+from typing import List,Optional
 from ..auth import oauth2,schemas as authSchemas
 
 with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
@@ -21,18 +21,25 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         votes=cur.fetchall()
         return votes
     
-    @router.get('/{id}',response_model=List[schemas.vote_out])
-    def get_vote():
-        #TODO
-        cur.execute('SELECT * FROM votes WHERE X=?',[id])
+    @router.get('/{id}',response_model=schemas.vote_out)#List[schemas.vote_out])
+    def get_vote(id,expand:Optional[List[str]]=Query(None)):
+        #JUST FOR TESTING THE EXPAND FEATURE
+        post,user=id.split("&")
+        cur.execute('SELECT * FROM votes WHERE post=? AND user=?',[post,user])
         vote=cur.fetchone()
+        if expand:
+            print(expand)
+            for e in expand:
+                firstDest=e[:e.find('.')]
+                temp=expand_response('votes',{'type':f"{e}","id":vote[f'{firstDest}']})
+                print(temp)
         return vote
 
     @router.post('/',response_model=schemas.vote_out,status_code=201)
     def create_vote(vote:schemas.vote_in,current_user:authSchemas.TokenData=Depends(oauth2.get_current_user)):
         cur.execute('''--sql
         SELECT ID FROM posts WHERE ID=?
-        ''',[vote.post])
+        ''',[vote.post])        
         if not cur.fetchone():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"post with id {vote.post} doesn't exist.")
         cur.execute('SELECT * FROM votes WHERE post=? AND user=?',[vote.post,current_user.ID])

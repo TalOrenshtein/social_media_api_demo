@@ -90,7 +90,7 @@ def expand_response(src:str,dest:dict,res:dict=None)->dict|None:
     dests.pop(0)
     if len(dests)==0:
         return last
-    dest['id']=last[f'{dests[0]}']
+    dest['id']=last#[f'{dests[0]}'] #last will be just the objectid probably....
     dest['type']=".".join(dests)
     return expand_response(src,dest,res)
 
@@ -128,4 +128,4 @@ def expand_response_helper(src:str,dest:dict,wanted:str=None)->dict|None:
         cur.execute(f'''--sql
             SELECT {'*' if not wanted else wanted} FROM {dest['type']}s WHERE ID=?
         ''',[dest['id']]) #TODO: find more elegant solution to this ugly {dest['type']}s
-        return cur.fetchone() if not wanted else cur.fetchone[f'{wanted}']
+        return cur.fetchone() if not wanted else cur.fetchone()[f'{wanted}']
