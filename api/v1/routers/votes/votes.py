@@ -30,7 +30,8 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         if expand:
             print(expand)
             for e in expand:
-                firstDest=e[:e.find('.')]
+                nested_field_dot=e.find('.')
+                firstDest=e[:nested_field_dot] if nested_field_dot>-1 else e
                 temp=expand_response('votes',{'type':f"{e}","id":vote[f'{firstDest}']})
                 print(temp)
         return vote
