@@ -68,7 +68,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             {f',user_table.{",user_table.".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""}
             FROM user_table CROSS JOIN posts_out ON posts_out.ownerID=user_table.ID)
             SELECT posts_and_users.*,COUNT(votes.postID) as votes FROM posts_and_users LEFT JOIN votes ON votes.postID=posts_and_users.ID GROUP BY posts_and_users.ID
-            ORDER BY {sort_by} {sort},ID DESC --impossive to sql inject these as each is a chosen value from a fixed sized pool of values.
+            ORDER BY {sort_by} {sort},created_at DESC --impossive to sql inject these as each is a chosen value from a fixed sized pool of values.
             LIMIT ? OFFSET ?
             ''',sqlArgs)
 
@@ -77,7 +77,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             WITH posts_out as (SELECT * FROM posts
             {"WHERE (title LIKE ? OR content LIKE ?)" if search!="" else " "})
             SELECT posts_out.*,COUNT(votes.postID) as votes FROM posts_out LEFT JOIN votes ON votes.postID=posts_out.ID GROUP BY posts_out.ID
-            ORDER BY {sort_by} {sort}, posts_out.ID DESC --impossive to sql inject these as each is a chosen value from a fixed sized pool of values.
+            ORDER BY {sort_by} {sort}, posts_out.created_at DESC --impossive to sql inject these as each is a chosen value from a fixed sized pool of values.
             LIMIT ? OFFSET ?
             ''',sqlArgs)
 
