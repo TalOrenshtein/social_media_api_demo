@@ -73,7 +73,7 @@ def expand_response(src:str,dest:dict,res:dict=None)->dict|None:
     except ValueError:
         try:
             get_sql_schema(f'{dests[0]}')
-        except _:
+        except:
             raise ValueError(f"couldn't find {dests[0]}'s table in DB")
     if not res:
         res={}
