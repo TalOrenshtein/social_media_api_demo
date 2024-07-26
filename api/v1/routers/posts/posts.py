@@ -26,9 +26,9 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         MAX_PAGE_SIZE=100
         if page<1:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail='page argument must be greater than 0')
-        if page_size<1 or page_size>MAX_PAGE_SIZE:
+        if page_size<1:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=f'page_size argument must be between 1 and {MAX_PAGE_SIZE}')
-        #page_size=min(page_size,MAX_PAGE_SIZE) #if not explicitly limit the maximum
+        page_size=min(page_size,MAX_PAGE_SIZE)
         sqlArgs=[]
         #sort_by handle:
         sort_by=sort_by.lower()
