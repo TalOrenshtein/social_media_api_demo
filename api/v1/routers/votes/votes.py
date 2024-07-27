@@ -22,7 +22,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         return votes
     
     @router.get('/{id}',response_model=schemas.vote_out)#List[schemas.vote_out])
-    def get_vote(id,expand:Optional[List[str]]=Query(None)):
+    def get_vote(id,expand:Optional[List[str]]=Query(None,alias='expand[]')):
         #JUST FOR TESTING THE EXPAND FEATURE
         post,user=id.split("&")
         cur.execute('SELECT * FROM votes WHERE post=? AND user=?',[post,user])

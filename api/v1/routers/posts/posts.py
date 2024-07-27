@@ -90,7 +90,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             }
 
     @router.get('/{id}',response_model=schemas.posts_out)
-    def get_post(id:str,current_user:str=Depends(oauth2.get_current_user),expand:Optional[List[str]]=Query(None)):
+    def get_post(id:str,current_user:str=Depends(oauth2.get_current_user),expand:Optional[List[str]]=Query(None,alias='expand[]')):
         # posts table contains the user but not the username, so,after querying the relevant data we'll be joining tables to find the username too
         # generalizing the idea that posts_out needs some info from users table that's not in posts table.
         extraInfo_from_userTable=[]
@@ -117,7 +117,9 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         if expand:
             print(expand)
             for e in expand:
-                temp=expand_response('posts',{'type':f"{e}","id":post[f'{e}']})
+                nested_field_dot=e.find('.')
+                firstDest=e[:nested_field_dot] if nested_field_dot>-1 else e
+                temp=expand_response('posts',{'type':f"{e}","id":post[f'{firstDest}']})
                 print(temp)
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"post with id {id} doesn't exist.")
