@@ -2,7 +2,7 @@ import sqlite3
 from fastapi import APIRouter,status,HTTPException,Depends,Query
 from . import schemas
 from typing import List,Optional
-from utils import schemaKeysToStr,getAPIs_rowFactory,expand_response
+from utils import schemaKeysToStr,getAPIs_rowFactory,handle_expand
 from ..auth import oauth2,schemas as authSchemas
 from ..users import schemas as usersSchemas
 from uuid import uuid4
@@ -112,17 +112,11 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             WITH count_votes AS (SELECT COUNT(post) AS votes FROM votes where post=?)
             SELECT * FROM posts,count_votes WHERE posts.ID=?
             ''',[id,id])
-
         post=cur.fetchone()
-        if expand:
-            print(expand)
-            for e in expand:
-                nested_field_dot=e.find('.')
-                firstDest=e[:nested_field_dot] if nested_field_dot>-1 else e
-                temp=expand_response('posts',{'type':f"{e}","id":post[f'{firstDest}']})
-                print(temp)
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"post with id {id} doesn't exist.")
+        if expand:
+            post=handle_expand(expand,post,schemas.posts_out,"posts")
         return post
     
     @router.post('/',response_model=schemas.posts_out,status_code=status.HTTP_201_CREATED)

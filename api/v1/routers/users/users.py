@@ -1,10 +1,9 @@
-from typing import Annotated
 import sqlite3
 from uuid import uuid4
-from fastapi import APIRouter,status,HTTPException,Depends
+from fastapi import APIRouter,status,HTTPException,Depends,Query
 from . import schemas
-from typing import List
-from utils import schemaKeysToStr,getAPIs_rowFactory,hashPW
+from typing import List,Optional
+from utils import schemaKeysToStr,getAPIs_rowFactory,hashPW,handle_expand
 from ..auth import oauth2
 
 
@@ -29,7 +28,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         return users
 
     @router.get('/{id}',response_model=schemas.users_out)
-    def get_user(id,current_user:str=Depends(oauth2.get_current_user)):
+    def get_user(id,current_user:str=Depends(oauth2.get_current_user),expand:Optional[List[str]]=Query(None,alias='expand[]')):
         r'''
         Searching and returning a used with {id} ID
         '''
@@ -37,6 +36,8 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         user=cur.fetchone()
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"user with id {id} doesn't exist.")
+        if expand:
+            user=handle_expand(expand,user,schemas.users_out,"users")
         return user
     
     @router.post('/',response_model=schemas.users_out,status_code=status.HTTP_201_CREATED)

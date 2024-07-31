@@ -1,7 +1,7 @@
 import sqlite3
 from fastapi import APIRouter,status,HTTPException,Depends,Query
 from . import schemas
-from utils import schemaKeysToStr,getAPIs_rowFactory,expand_response
+from utils import schemaKeysToStr,getAPIs_rowFactory,handle_expand
 from typing import List,Optional
 from ..auth import oauth2,schemas as authSchemas
 
@@ -23,17 +23,12 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
     
     @router.get('/{id}',response_model=schemas.vote_out)#List[schemas.vote_out])
     def get_vote(id,expand:Optional[List[str]]=Query(None,alias='expand[]')):
-        #JUST FOR TESTING THE EXPAND FEATURE
+        #I know it's weird to implement this, but it's here just for demonstrating the expand feature
         post,user=id.split("&")
         cur.execute('SELECT * FROM votes WHERE post=? AND user=?',[post,user])
         vote=cur.fetchone()
         if expand:
-            print(expand)
-            for e in expand:
-                nested_field_dot=e.find('.')
-                firstDest=e[:nested_field_dot] if nested_field_dot>-1 else e
-                temp=expand_response('votes',{'type':f"{e}","id":vote[f'{firstDest}']})
-                print(temp)
+            vote=handle_expand(expand,vote,schemas.vote_out,"votes")
         return vote
 
     @router.post('/',response_model=schemas.vote_out,status_code=201)
