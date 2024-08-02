@@ -1,7 +1,8 @@
-from pydantic import BaseModel,Field,SerializeAsAny 
+from pydantic import BaseModel,Field,SerializeAsAny
 from datetime import datetime
-from typing import List#,Optional
+from typing import List,Annotated#,Optional
 from utils import get_sql_schema
+from ..users.schemas import users_out
 
 class posts_in(BaseModel):
     title:str=Field(default='')
@@ -9,9 +10,9 @@ class posts_in(BaseModel):
 
 class posts_out(BaseModel):
     ID:str
-    ownerID:str
-    username:str
-    # email:str
+    user:str|SerializeAsAny[users_out]
+    username:Annotated[str,Field(description='user')] #by convention, the field's description will hold the name of the external object that said field depend on, represented as a single resource.
+    # email:Annotated[str,Field(description='user')] #by convention, the field's description will hold the name of the external object that said field depend on, represented as a single resource.
     title:str
     content:str
     votes:int=Field(default=0)

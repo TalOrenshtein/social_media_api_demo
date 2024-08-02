@@ -6,5 +6,6 @@ class Env(BaseSettings):
     JWT_ALGORITHM:str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES:int=30
     API_VERSION:int=1
+    EXPAND_MAX_DEPTH:int=4
 
 env=Env()

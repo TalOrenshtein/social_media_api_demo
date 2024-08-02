@@ -1,8 +1,8 @@
 import sqlite3
-from fastapi import APIRouter,status,HTTPException,Depends
+from fastapi import APIRouter,status,HTTPException,Depends,Query
 from . import schemas
 from typing import List,Optional
-from utils import schemaKeysToStr,getAPIs_rowFactory
+from utils import schemaKeysToStr,getAPIs_rowFactory,handle_expand
 from ..auth import oauth2,schemas as authSchemas
 from ..users import schemas as usersSchemas
 from uuid import uuid4
@@ -50,7 +50,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         #pagination handle:
         sqlArgs.extend([page_size,(page-1)*page_size])
 
-        # posts table contains the ownerID but not the username, so,after querying the relevant data we'll be joining tables to find the username too
+        # posts table contains the user but not the username, so,after querying the relevant data we'll be joining tables to find the username too
         # generalizing the idea that posts_out needs some info from users table that's not in posts table.
         extraInfo_from_userTable=[]
         for e in schemaKeysToStr(schemas.posts_out):
@@ -64,11 +64,11 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             count_votes AS (SELECT * FROM votes),
             user_table AS 
             (SELECT ID{f',{",".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""} --fetching extra fields if needed.
-            FROM users WHERE ID in (select ownerID from posts_out)), --this where clause should,in theory, redude the size of the join table by reducing the size of one of the joined tables by filtering unnecessary rows before the join action.
+            FROM users WHERE ID in (select user from posts_out)), --this where clause should,in theory, redude the size of the join table by reducing the size of one of the joined tables by filtering unnecessary rows before the join action.
             posts_and_users AS (SELECT posts_out.*
             {f',user_table.{",user_table.".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""}
-            FROM user_table CROSS JOIN posts_out ON posts_out.ownerID=user_table.ID)
-            SELECT posts_and_users.*,COUNT(votes.postID) as votes FROM posts_and_users LEFT JOIN votes ON votes.postID=posts_and_users.ID GROUP BY posts_and_users.ID
+            FROM user_table CROSS JOIN posts_out ON posts_out.user=user_table.ID)
+            SELECT posts_and_users.*,COUNT(votes.post) as votes FROM posts_and_users LEFT JOIN votes ON votes.post=posts_and_users.ID GROUP BY posts_and_users.ID
             ORDER BY {sort_by} {sort},created_at DESC --impossive to sql inject these as each is a chosen value from a fixed sized pool of values.
             LIMIT ? OFFSET ?
             ''',sqlArgs)
@@ -77,7 +77,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             cur.execute(f'''--sql
             WITH posts_out as (SELECT * FROM posts
             {"WHERE (title LIKE ? OR content LIKE ?)" if search!="" else " "})
-            SELECT posts_out.*,COUNT(votes.postID) as votes FROM posts_out LEFT JOIN votes ON votes.postID=posts_out.ID GROUP BY posts_out.ID
+            SELECT posts_out.*,COUNT(votes.post) as votes FROM posts_out LEFT JOIN votes ON votes.post=posts_out.ID GROUP BY posts_out.ID
             ORDER BY {sort_by} {sort}, posts_out.created_at DESC --impossive to sql inject these as each is a chosen value from a fixed sized pool of values.
             LIMIT ? OFFSET ?
             ''',sqlArgs)
@@ -90,8 +90,8 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             }
 
     @router.get('/{id}',response_model=schemas.posts_out)
-    def get_post(id:str,current_user:str=Depends(oauth2.get_current_user)):
-        # posts table contains the ownerID but not the username, so,after querying the relevant data we'll be joining tables to find the username too
+    def get_post(id:str,current_user:str=Depends(oauth2.get_current_user),expand:Optional[List[str]]=Query(None,alias='expand[]')):
+        # posts table contains the user but not the username, so,after querying the relevant data we'll be joining tables to find the username too
         # generalizing the idea that posts_out needs some info from users table that's not in posts table.
         extraInfo_from_userTable=[]
         for e in schemaKeysToStr(schemas.posts_out):
@@ -100,22 +100,23 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         if len(extraInfo_from_userTable)>0:
             cur.execute(f'''--sql
             WITH posts_out AS (SELECT * FROM posts WHERE ID=?),
-            count_votes AS (SELECT COUNT(postID) AS votes FROM votes where postID=?),
+            count_votes AS (SELECT COUNT(post) AS votes FROM votes where post=?),
             user_table AS (SELECT ID{f',{",".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""} FROM users)
             SELECT posts_out.*
             {f',user_table.{",user_table.".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""}
             ,count_votes.*
-            FROM user_table CROSS JOIN posts_out ON posts_out.ownerID=user_table.ID,count_votes
+            FROM user_table CROSS JOIN posts_out ON posts_out.user=user_table.ID,count_votes
             ''',[id,id])
         else:
             cur.execute('''--sql
-            WITH count_votes AS (SELECT COUNT(postID) AS votes FROM votes where postID=?)
+            WITH count_votes AS (SELECT COUNT(post) AS votes FROM votes where post=?)
             SELECT * FROM posts,count_votes WHERE posts.ID=?
             ''',[id,id])
-
         post=cur.fetchone()
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"post with id {id} doesn't exist.")
+        if expand:
+            post=handle_expand(expand,post,schemas.posts_out,"posts")
         return post
     
     @router.post('/',response_model=schemas.posts_out,status_code=status.HTTP_201_CREATED)
@@ -130,10 +131,10 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             cur.execute('SELECT ID FROM posts WHERE ID=?',[uuid])
             if cur.fetchone() is None:
                 break
-        cur.execute(f'INSERT INTO posts(ID,ownerID,{",".join(schemaKeysToStr(schemas.posts_in))}) VALUES(?,?,?,?)',[uuid,current_user.ID,post.title,post.content])
+        cur.execute(f'INSERT INTO posts(ID,user,{",".join(schemaKeysToStr(schemas.posts_in))}) VALUES(?,?,?,?)',[uuid,current_user.ID,post.title,post.content])
         db.commit()
 
-        # posts table contains the ownerID but not the username, so,after querying the relevant data we'll be joining tables to find the username too
+        # posts table contains the user but not the username, so,after querying the relevant data we'll be joining tables to find the username too
         # generalizing the idea that posts_out needs some info from users table that's not in posts table.
         extraInfo_from_userTable=[]
         for e in schemaKeysToStr(schemas.posts_out):
@@ -144,7 +145,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
             WITH post_created AS (SELECT * FROM posts WHERE ID=?),
             user_table AS (SELECT ID{f',{",".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""} FROM users)
             SELECT post_created.* {f',user_table.{",user_table.".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""}
-            FROM user_table CROSS JOIN post_created --ON post_created.ownerID=user_table.ID
+            FROM user_table CROSS JOIN post_created --ON post_created.user=user_table.ID
             ''',[uuid])
         else:
             cur.execute('''--sql
@@ -158,7 +159,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         r'''
             Deletes a post created by this user.
         '''
-        cur.execute('DELETE FROM posts WHERE ownerID=? and ID=?',[current_user.ID,int(id)])
+        cur.execute('DELETE FROM posts WHERE user=? and ID=?',[current_user.ID,int(id)])
         if cur.rowcount==0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         db.commit()
@@ -168,7 +169,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         r'''
             Deletes this users' posts.
         '''
-        cur.execute('DELETE FROM posts WHERE ownerID=?',[current_user.ID])
+        cur.execute('DELETE FROM posts WHERE user=?',[current_user.ID])
         if cur.rowcount==0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail='No posts exists.')
         db.commit()
