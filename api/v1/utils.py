@@ -202,8 +202,16 @@ def handle_model_fields_dependencies(data:dict,response_model:BaseModel)->dict:
                 data[key]=value
     return data
 
-def handle_expand(expand:str,obj_data:dict,obj_response_model:BaseModel,obj_title_collection_resource:str):
-    if expand:
+def handle_expand(expand:list,obj_data:dict,obj_response_model:BaseModel,obj_title_collection_resource:str)->dict:
+    r'''
+    Handling expandtion
+    :param list expand: list of string, where each element is a string represent an expandtion request.
+    :param dict obj_data: The object's data before the expandtion
+    :param BaseModel obj_request_model:The object's reponse (out) pydantic model
+    :param str obj_title_collection_resource: a string that represent the name of the object resource, as a collection. For example: users,posts,accounts etc.
+    :returns: a ready to unpack dict. returns None if expand is None or empty.
+    '''
+    if expand and len(expand)>0:
         destList=[]
         for e in expand:
             nested_field_dot=e.find('.') #getting a list of nesting fields
