@@ -61,20 +61,20 @@ def get_sql_schema(table:str)->dict:
                 return schema
         raise ValueError(f'{table} table not found.')
 
-def get_depenable_model(metadata)->list:
+def get_depenable_model(metadata)->BaseModel|None:
     r'''
     searching a pydantic model's metadata for dependentable model.
     :param metadata: A pydantic model's metadata (from model.model_fields)
     :returns: A list that list all the dependable fields, depending if dependable_fields is True/False.
     '''
-    args=[]
+    model=None
     if get_origin(metadata.annotation) is Union:
             for arg in get_args(metadata.annotation):
                 if get_origin(arg) is Annotated and type(get_args(arg)[1]) is SerializeAsAny: # assuming all polymorphism was enabled via using SerializeAsAny
-                    args.append(get_args(arg)[0])
+                    model=get_args(arg)[0]
     elif issubclass(metadata.annotation,BaseModel):
-        args.append(metadata.annotation)
-    return args
+        model=metadata.annotation
+    return model
 
 def expand_response(src:str,destList:list,src_model:BaseModel)->dict|None:
     r'''
@@ -181,7 +181,8 @@ def handle_model_fields_dependencies(data:dict,response_model:BaseModel)->dict:
                 object_fields_mapping[external_object].append(field)
         else:
             #create model recursively (nested models might have dependent fields in them as well)
-            for model in get_depenable_model(meta_data):
+            model=get_depenable_model(meta_data)
+            if model:
                 data[field]=handle_model_fields_dependencies(data[field],model)
     with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         #set up cursor
@@ -225,7 +226,8 @@ def handle_expand(expand:list,obj_data:dict,obj_response_model:BaseModel,obj_tit
         schema_convertion_dict={}
         for field,meta_data in obj_response_model.model_fields.items():
             if field in expandation:
-                for model in get_depenable_model(meta_data):
+                model=get_depenable_model(meta_data)
+                if model:
                     schema_convertion_dict[field]=handle_model_fields_dependencies(expandation[field],model)
             else:
                 schema_convertion_dict[field]=obj_data[field]
