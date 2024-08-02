@@ -65,7 +65,7 @@ def get_depenable_model(metadata)->list:
     r'''
     searching a pydantic model's metadata for dependentable model.
     :param metadata: A pydantic model's metadata (from model.model_fields)
-    :returns: A list that list al the dependable fields, depending if dependable_fields is True/False.
+    :returns: A list that list all the dependable fields, depending if dependable_fields is True/False.
     '''
     args=[]
     if get_origin(metadata.annotation) is Union:
