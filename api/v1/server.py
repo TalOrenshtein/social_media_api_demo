@@ -1,4 +1,4 @@
-import sqlite3
+import psycopg2
 from fastapi import FastAPI,APIRouter
 from routers.posts import posts
 from routers.users import users
@@ -6,15 +6,14 @@ from routers.auth import auth
 from routers.votes import votes
 from fastapi.middleware.cors import CORSMiddleware
 from config import env
+from db import db_pool
+import atexit
 
-with sqlite3.connect('social_media_api.db') as db:
-    cur=db.cursor()
-    with open('./init.sql','r') as file:
-        #turn on foreign keys
-        cur.execute('PRAGMA foreign_keys = ON;')
-        #init db
-        cur.executescript(file.read())
-        db.commit()
+with open('./init.sql','r') as file:
+    with db_pool.connection() as con:
+        # cur=db.getCur()
+        con.execute(file.read(),())
+        con.commit()
 
 app=FastAPI()
 
@@ -48,3 +47,5 @@ def root():
 
 #adding said prefix router
 app.include_router(prefix_router)
+
+#atexit.register(DB.close_pool) #registering DB's class method close pool for closing the pool when the app's closing.
