@@ -4,8 +4,8 @@ from jwt import InvalidTokenError
 from . import schemas
 from fastapi import Depends,status,HTTPException
 from fastapi.security.oauth2 import OAuth2PasswordBearer
-import sqlite3
 from config import env
+from db import db_pool
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 #JWT CONSTATNTS
@@ -38,15 +38,12 @@ def get_current_user(token:str=Depends(oauth2_scheme)):
     )
     verified_data=verify_token(token,credentials_exception)
     #search the db if user is still registered and continue only if he is.
-    with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
-        #set up cursor
-        cur=db.cursor()
-        #turn on foreign keys
-        #cur.execute('PRAGMA foreign_keys = ON;')
-        
+    #with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
+    with db_pool.connection() as con:
+        cur=con.cursor()
         cur.execute('''--sql
-        SELECT ID FROM users WHERE ID=?
-        ''',[verified_data.ID])
+        SELECT ID FROM users WHERE ID=%s
+        ''',(verified_data.ID,))
         if not cur.fetchone():
             raise credentials_exception
     return verified_data
