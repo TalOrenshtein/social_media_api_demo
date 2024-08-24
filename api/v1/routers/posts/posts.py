@@ -66,6 +66,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
                 {"WHERE (title LIKE ? OR content LIKE ?)" if search!="" else " "}),
                 count_votes AS (SELECT * FROM votes),
                 --creating a table for each object that post's schema depends on, and will append them with the relevant fields to the with section to include them all.
+                --assuming that the table name is a representation of a resource as a collection (i.e users and not user).
                 {",".join([f'''{external_object}_table AS (SELECT ID{f',{",".join(external_fields)}'} --selecting all relevant fields and ID
                 FROM {external_object}s WHERE ID in (select {external_object} from posts_out)), --this where clause should,in theory, redude the size of the join table by reducing the size of one of the joined tables by filtering unnecessary rows before the join action.'''
                 for external_object,external_fields in object_fields_mapping.items()])}
@@ -99,21 +100,33 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
 
     @router.get('/{id}',response_model=schemas.posts_out)
     def get_post(id:str,current_user:str=Depends(oauth2.get_current_user),expand:Optional[List[str]]=Query(None,alias='expand[]')):
-        # posts table contains the user but not the username, so,after querying the relevant data we'll be joining tables to find the username too
-        # generalizing the idea that posts_out needs some info from users table that's not in posts table.
-        extraInfo_from_userTable=[]
-        for e in schemaKeysToStr(schemas.posts_out):
-            if e not in schemas.get_posts_sql_columns() and e in schemaKeysToStr(usersSchemas.users_out):
-                extraInfo_from_userTable.append(e)
-        if len(extraInfo_from_userTable)>0:
+        # checking if posts_out schema needs some info from an external object (i.e username from user object).
+        object_fields_mapping={} #holds object names as keys and list of values as value.
+        for field,meta_data in schemas.posts_out.model_fields.items():
+            if meta_data.description is not None:
+                external_object=meta_data.description #by convention, the field's description will hold the name of the external object that said field depend on, represented as a single resource.
+                if external_object not in object_fields_mapping:
+                    object_fields_mapping[external_object]=[field]
+                else:
+                    object_fields_mapping[external_object].append(field)
+        if object_fields_mapping!={}:
             cur.execute(f'''--sql
             WITH posts_out AS (SELECT * FROM posts WHERE ID=?),
             count_votes AS (SELECT COUNT(post) AS votes FROM votes where post=?),
-            user_table AS (SELECT ID{f',{",".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""} FROM users)
-            SELECT posts_out.*
-            {f',user_table.{",user_table.".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""}
-            ,count_votes.*
-            FROM user_table CROSS JOIN posts_out ON posts_out.user=user_table.ID,count_votes
+
+            --creating a table for each object that post's schema depends on, and will append them with the relevant fields to the with section to include them all.
+            --assuming that the table name is a representation of a resource as a collection (i.e users and not user).
+            {",".join([f'''{external_object}_table AS (SELECT ID{f',{",".join(external_fields)}'} --selecting all relevant fields and ID
+            FROM {external_object}s WHERE ID in (select {external_object} from posts_out)), --this where clause should,in theory, redude the size of the join table by reducing the size of one of the joined tables by filtering unnecessary rows before the join action.'''
+            for external_object,external_fields in object_fields_mapping.items()])}
+            -- join all the tables we included with the WITH statement, with filtering on posts_out.<external_object>=<external_object>_table.ID
+            {f'''posts_joined AS (SELECT posts_out.*{f'{','.join([f'''{f''',{external_object}_table.
+            {f",{external_object}_table.".join(external_fields)}'''}
+            ''' for external_object,external_fields in object_fields_mapping.items()])}'}
+            FROM posts_out CROSS JOIN 
+            {'CROSS JOIN '.join([f'''{external_object}_table ON posts_out.{external_object}={external_object}_table.ID'''
+            for external_object,external_fields in object_fields_mapping.items()])} )'''} --closing the post_joined statement
+            SELECT posts_joined.*,COUNT(votes.post) as votes FROM posts_joined LEFT JOIN votes ON votes.post=posts_joined.ID GROUP BY posts_joined.ID
             ''',[id,id])
         else:
             cur.execute('''--sql
@@ -123,7 +136,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
         post=cur.fetchone()
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"post with id {id} doesn't exist.")
-        if expand:
+        if expand and isinstance(expand,list):
             post=handle_expand(expand,post,schemas.posts_out,"posts")
         return post
     
@@ -141,25 +154,7 @@ with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
                 break
         cur.execute(f'INSERT INTO posts(ID,user,{",".join(schemaKeysToStr(schemas.posts_in))}) VALUES(?,?,?,?)',[uuid,current_user.ID,post.title,post.content])
         db.commit()
-
-        # posts table contains the user but not the username, so,after querying the relevant data we'll be joining tables to find the username too
-        # generalizing the idea that posts_out needs some info from users table that's not in posts table.
-        extraInfo_from_userTable=[]
-        for e in schemaKeysToStr(schemas.posts_out):
-            if e not in schemas.get_posts_sql_columns() and e in schemaKeysToStr(usersSchemas.users_out):
-                extraInfo_from_userTable.append(e)
-        if len(extraInfo_from_userTable)>0:
-            cur.execute(f'''--sql
-            WITH post_created AS (SELECT * FROM posts WHERE ID=?),
-            user_table AS (SELECT ID{f',{",".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""} FROM users)
-            SELECT post_created.* {f',user_table.{",user_table.".join(extraInfo_from_userTable)}' if len(extraInfo_from_userTable)>0 else ""}
-            FROM user_table CROSS JOIN post_created --ON post_created.user=user_table.ID
-            ''',[uuid])
-        else:
-            cur.execute('''--sql
-            SELECT * FROM posts WHERE ID=?
-            ''',[uuid])
-        post=cur.fetchone()
+        post=get_post(uuid)
         return post
 
     @router.delete('/{id}',status_code=status.HTTP_204_NO_CONTENT)
