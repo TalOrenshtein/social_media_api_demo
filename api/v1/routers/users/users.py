@@ -2,7 +2,7 @@ from uuid import uuid4
 from fastapi import APIRouter,status,HTTPException,Depends,Query
 from . import schemas
 from typing import List,Optional
-from utils import schemaKeysToStr,getAPIs_rowFactory,hashPW,handle_expand
+from utils import schemaKeysToStr,hashPW,handle_expand
 from ..auth import oauth2
 from db import db_pool
 
@@ -27,7 +27,7 @@ def get_user(id,current_user:str=Depends(oauth2.get_current_user),expand:Optiona
     '''
     with db_pool.connection() as con:
         cur=con.cursor()
-        cur.execute(f'SELECT {",".join(schemaKeysToStr(schemas.users_out))} FROM users WHERE ID=?',(id,))
+        cur.execute(f'SELECT {",".join(schemaKeysToStr(schemas.users_out))} FROM users WHERE ID=%s',(id,))
         user=cur.fetchone()
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"user with id {id} doesn't exist.")

@@ -1,6 +1,6 @@
 from fastapi import APIRouter,HTTPException,status
 from . import schemas
-from utils import hashPW,schemaKeysToStr,getAPIs_rowFactory,verifyPW
+from utils import hashPW,schemaKeysToStr,verifyPW
 from . import oauth2
 from db import db_pool
 

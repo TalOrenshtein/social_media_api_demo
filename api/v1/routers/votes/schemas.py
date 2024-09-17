@@ -6,5 +6,5 @@ class vote_in(BaseModel):
     post:str
 
 class vote_out(BaseModel):
-    postid:str | SerializeAsAny[posts_out]
-    userid:str | SerializeAsAny[users_out]
+    post:str | SerializeAsAny[posts_out]
+    user:str | SerializeAsAny[users_out]

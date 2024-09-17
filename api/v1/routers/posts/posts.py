@@ -1,7 +1,7 @@
 from fastapi import APIRouter,status,HTTPException,Depends,Query
 from . import schemas
 from typing import List,Optional
-from utils import schemaKeysToStr,getAPIs_rowFactory,handle_expand,sql_table_name_to_schema_name
+from utils import schemaKeysToStr,handle_expand,sql_table_name_to_schema_name
 from ..auth import oauth2,schemas as authSchemas
 from ..users import schemas as usersSchemas
 from uuid import uuid4
@@ -80,7 +80,6 @@ page_size:int=10,page:int=1,search:Optional[str]="",sort_by:Optional[str]="ID",s
         ORDER BY {sort_by} {sort}, posts_out.created_at DESC --impossive to sql inject these as each is a chosen value from a fixed sized pool of values.
         LIMIT %s OFFSET %s
         '''
-    
     with db_pool.connection() as con:
         cur=con.cursor()
         cur.execute(sql_script,sqlArgs)
@@ -92,8 +91,6 @@ page_size:int=10,page:int=1,search:Optional[str]="",sort_by:Optional[str]="ID",s
         res=cur.fetchall()
         is_last_page=res[0]['count']<=page*page_size
 
-    
-    #transforming sql table name to schema name TODO: explain better
     for post in posts:
         sql_table_name_to_schema_name(post)
     return {
@@ -143,10 +140,7 @@ def get_post(id:str,current_user:str=Depends(oauth2.get_current_user),expand:Opt
         post=cur.fetchone()
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"post with id {id} doesn't exist.")
-    
-    #transforming sql table name to schema name TODO: explain better
     sql_table_name_to_schema_name(post)
-
     if expand and isinstance(expand,list):
         post=handle_expand(expand,post,schemas.posts_out,"posts")
     return post

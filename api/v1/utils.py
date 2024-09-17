@@ -1,7 +1,7 @@
+from db import db_pool
 from pydantic import BaseModel,SerializeAsAny
 from fastapi import HTTPException,status
 from passlib.context import CryptContext
-import sqlite3
 from copy import deepcopy
 from config import env
 from typing import get_args,get_origin,Union,Annotated
@@ -21,45 +21,60 @@ def schemaKeysToStr(schema:BaseModel)->list:
     '''
     return [key for key in schema.model_fields]
 
-def getAPIs_rowFactory():
+def get_tables_names_as_signle_resource()->list:
     r'''
-    return a lambda functon that instructs sqlite3 to return the results as dict.
+    :returns: a list with the table names as elements
     '''
-    return lambda c, r: dict(zip([col[0] for col in c.description], r))
+    with db_pool.connection() as con:
+        cur=con.cursor()
+        cur.execute('''--sql
+            SELECT table_name
+            FROM   information_schema.tables
+            WHERE  table_schema='public';
+        ''')
+        tables=cur.fetchall()
+        return [e['table_name'][:-1] if e['table_name'][-1]=='s' else e['table_name'] for e in tables] #removing the 's' chars to convert to single resource naming
+
+def sql_table_name_to_schema_name(d:dict):
+    '''
+    Transforming sql table representation to schema representation (i.e userid->user) as these fields won't necessarily hold the id itself.
+    A bit more detail: This diffrences are presented because the response object might be expandable, thus if expanding the field and the field name is <tablename_single_resource>id, it doesn't represent the data well.
+    :returns: A "pointer" to the edited dict.
+    '''
+    table_names_single=get_tables_names_as_signle_resource()
+    keys_to_change={}
+    for e in d:
+        for name in table_names_single:
+            if e==f'{name}id':
+                keys_to_change[e]=name
+                break
+    for k,v in keys_to_change.items():
+        d[v]=d[k]
+        d.pop(k)
+    return d
 
 def get_sql_schema(table:str)->dict:
     r'''
     get a dict with the columns as keys and their types as values
     :returns: a dict with the columns as keys and their types as values
     '''
-    with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
-        #set up cursor
-        cur=db.cursor()
-        #turn on foreign keys
-        cur.execute('PRAGMA foreign_keys = ON;')
-
+    with db_pool.connection() as con:
+        cur=con.cursor()
         #verify that the input is an actual table, and get its' schema
         cur.execute('''--sql
-            SELECT name,sql FROM sqlite_master
-            WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%'
-            UNION ALL
-            SELECT name,sql FROM sqlite_temp_master
-            WHERE type IN ('table','view')
-            ORDER BY 1
+            SELECT table_name,column_name, data_type
+            FROM   information_schema.columns
+            WHERE  table_schema='public'
+            ORDER  BY ordinal_position;
         ''')
         tables=cur.fetchall()
+        schema={}
         for e in tables:
-            if e[0]==table:
-                fields=e[1].split(table)[1].strip('(),\n').splitlines()
-                if fields[-1].strip().startswith('FOREIGN'):
-                    fields.pop(-1)
-                schema={}
-                for i in range(len(fields)):
-                    fields[i]=fields[i].strip().rstrip(',')
-                    key,value=fields[i].split(' ',1)
-                    schema[key]=value
-                return schema
-        raise ValueError(f'{table} table not found.')
+            if e['table_name']==table:
+                schema[e['column_name']]=e['data_type']
+        if schema=={}:
+            raise ValueError(f'{table} table not found.')
+        return schema
 
 def get_depenable_model(metadata)->BaseModel|None:
     r'''
@@ -88,12 +103,12 @@ def expand_response(src:str,destList:list,src_model:BaseModel)->dict|None:
     '''
     destList.sort(key=lambda e:e['type'].count("."))
     srcHolder=src #saving the original source to use for each elemenet in destList
-    res={}
-    memo={} #using memoraztion technique to avoid unnecessary helper calls when possible, to try and reduce load on the db. It seems reasonable to memo as the user probably won't expand too many unique fields, and in general it still keeps the space complexity at O(n).
+    res={} #will be updated using res_traveler that'll update via shallow copy.
+    memo={} #for using memoraztion technique
     for dest in destList:
         src=srcHolder
         dests=[3.1415] #helps imitating do-while loop
-        res_traveler=res #will travel to dest's depth to build the result, starting with depth 0.
+        res_traveler=res #using shallow copy. will travel to dest's depth to build the result, starting with depth 0.
         while len(dests)>0:
             dests=dest['type'].split('.')[:env.EXPAND_MAX_DEPTH]
             try:
@@ -103,6 +118,7 @@ def expand_response(src:str,destList:list,src_model:BaseModel)->dict|None:
                     get_sql_schema(f'{dests[0]}')
                 except:
                     raise ValueError(f"field '{dests[0]}' isn't expandable.")
+            #using memoraztion technique to avoid unnecessary helper calls when possible, to try and reduce load on the db. It seems reasonable to memo as the user probably won't expand too many unique fields, and in general it still keeps the space complexity at O(n).
             if not memo:
                 memo={}
             if f'{dests[0]}@{dest['id']}' not in memo:
@@ -112,17 +128,13 @@ def expand_response(src:str,destList:list,src_model:BaseModel)->dict|None:
                     src_model
                 )
                 memo[f'{dests[0]}@{dest['id']}']=dest_object
-                res_traveler[dests[0]]=memo[f'{dests[0]}@{dest['id']}']
-                if len(dests)>1:
-                    dest['id']=memo[f'{dests[0]}@{dest['id']}'][f'{dests[1]}']
-            else:
-                res_traveler[dests[0]]=memo[f'{dests[0]}@{dest['id']}']
-                if len(dests)>1:
-                    dest['id']=memo[f'{dests[0]}@{dest['id']}'][dests[1]]
+            #updating and going deeper if needed (will still update res itself, but only inside res[dests[0]] key)
+            res_traveler[dests[0]]=memo[f'{dests[0]}@{dest['id']}']
+            if len(dests)>1:
+                dest['id']=memo[f'{dests[0]}@{dest['id']}'][dests[1]]
             res_traveler=res_traveler[dests[0]]
             src=dests[0]
             dests.pop(0)
-            
             dest['type']=".".join(dests)
     return res
 
@@ -143,26 +155,22 @@ def expand_response_helper(src:str,dest:dict,src_model,sql_instead_of_pydantic:b
         if meta_data.description is None: #by convention, the field's description will hold the name of the external object that said field depend on, represented as a single resource.
             independable_fields.append(field)
     try:
-        related=dest['type'] in get_sql_schema(f'{src}s') if  sql_instead_of_pydantic else dest['type'] in independable_fields
+        related=f"{dest['type']}id" in get_sql_schema(f'{src}s') if  sql_instead_of_pydantic else f"{dest['type']}" in independable_fields
     except ValueError:
         try:
-            related=dest['type'] in get_sql_schema(f'{src}') if  sql_instead_of_pydantic else dest['type'] in independable_fields
+            related=f"{dest['type']}id" in get_sql_schema(f'{src}') if  sql_instead_of_pydantic else f"{dest['type']}" in independable_fields
         except _:
             raise ValueError(f"{dest['type']} isn't related to {src}")
     if not related:
         raise ValueError(f"{dest['type']} isn't related to {src}")
     #getting dest's info
-    with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
-        #set up cursor
-        cur=db.cursor()
-        #turn on foreign keys
-        cur.execute('PRAGMA foreign_keys = ON;')
-        #set up row factory so SQL will return the results as a dict.
-        cur.row_factory=getAPIs_rowFactory()
+    with db_pool.connection() as con:
+        cur=con.cursor()
         cur.execute(f'''--sql
-            SELECT * FROM {dest['type']}s WHERE ID=?
-        ''',[dest['id']]) #TODO: find more elegant solution to this ugly {dest['type']}s
-        return cur.fetchone()
+            SELECT * FROM {dest['type']}s WHERE ID=%s
+        ''',(dest['id'],)) #TODO: find more elegant solution to this ugly {dest['type']}s
+        res=cur.fetchone()
+        return sql_table_name_to_schema_name(res)
 
 def handle_model_fields_dependencies(data:dict,response_model:BaseModel)->dict:
     r'''
@@ -184,20 +192,14 @@ def handle_model_fields_dependencies(data:dict,response_model:BaseModel)->dict:
             model=get_depenable_model(meta_data)
             if model:
                 data[field]=handle_model_fields_dependencies(data[field],model)
-    with sqlite3.connect('social_media_api.db', check_same_thread=False) as db:
-        #set up cursor
-        cur=db.cursor()
-        #turn on foreign keys
-        cur.execute('PRAGMA foreign_keys = ON;')
-        #set up row factory so SQL will return the results as a dict.
-        cur.row_factory=getAPIs_rowFactory()
-        #querying each object table for the wanted fields and adding it to data
+    with db_pool.connection() as con:
+        cur=con.cursor()
         for obj in object_fields_mapping:
             #by convention, obj is written as a single resource and not a collection resource like the resources appears as sql table names or url paths
-            obj_id=data[obj] if isinstance(data[obj],str) else data[obj]['ID']
+            obj_id=data[obj] if isinstance(data[obj],str) else data[obj]['id']
             cur.execute(f'''--sql
-            SELECT {",".join(object_fields_mapping[obj])} from {obj}s where ID=?
-            ''',[obj_id])
+            SELECT {",".join(object_fields_mapping[obj])} from {obj}s where ID=%s
+            ''',(obj_id,))
             extentions=cur.fetchone()
             for key,value in extentions.items():
                 data[key]=value
