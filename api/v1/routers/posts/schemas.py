@@ -10,7 +10,7 @@ class posts_in(BaseModel):
 
 class posts_out(BaseModel):
     id:str
-    userid:str|SerializeAsAny[users_out]
+    user:str|SerializeAsAny[users_out]
     username:Annotated[str,Field(description='user')] #Optional field. By convention, the field's description will hold the name of the external object that said field depend on, represented as a single resource.
     # email:Annotated[str,Field(description='user')] #Optional field. By convention, the field's description will hold the name of the external object that said field depend on, represented as a single resource.
     title:str
