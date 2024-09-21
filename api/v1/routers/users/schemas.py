@@ -8,7 +8,7 @@ class users_in(BaseModel):
     password: str
     
 class users_out(BaseModel):
-    ID: str
+    id: str
     username: str
     email: EmailStr
     created_at: datetime
