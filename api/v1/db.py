@@ -9,7 +9,7 @@ db_pool=ConnectionPool(
         min_size=env.DB_MIN_CONNS,
         max_size=env.DB_MAX_CONNS,
         kwargs={"user":env.DB_USERNAME,
-        "password":env.DB_PASSWORD,
+        "password":env.DB_PASSWORD.get_secret_value(),
         "host":env.DB_HOSTNAME,
         "port":env.DB_PORT,
         "dbname":env.DB_NAME,
