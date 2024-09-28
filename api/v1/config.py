@@ -8,7 +8,7 @@ class Env(BaseSettings):
     API_VERSION:int=1
     EXPAND_MAX_DEPTH:int=4
     DB_USERNAME:str
-    DB_PASSWPRD:str
+    DB_PASSWORD:str
     DB_HOSTNAME:str
     DB_PORT:int=5432
     DB_NAME:str="social_media_api"
